@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lanny — LAN Scanner</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">
+    <div class="logo">L</div>
+    <div class="brand-text">
+      <div class="brand-name">Lanny</div>
+      <div class="brand-sub">LAN scanner</div>
+    </div>
+    <button id="themeToggle" class="theme-toggle" title="Toggle light / dark">🌙</button>
+  </div>
+
+  <nav class="nav">
+    <button class="nav-btn active" data-view="devices">🖥️ Devices</button>
+    <button class="nav-btn" data-view="health">🛡️ Network test</button>
+    <button class="nav-btn" data-view="traffic">📡 Traffic monitor</button>
+    <button class="nav-btn" data-view="wol">⏰ Wake-on-LAN</button>
+    <button class="nav-btn" data-view="ssh">⌨️ SSH</button>
+  </nav>
+
+  <section class="net-card">
+    <div class="net-card-title">Network</div>
+    <div class="net-row"><span>SSID/IF</span><b id="ni-iface">—</b></div>
+    <div class="net-row"><span>Your IP</span><b id="ni-ip">—</b></div>
+    <div class="net-row"><span>Gateway</span><b id="ni-gw">—</b></div>
+    <div class="net-row"><span>Subnet</span><b id="ni-cidr">—</b></div>
+    <div class="net-row"><span>Hosts</span><b id="ni-hosts">—</b></div>
+  </section>
+
+  <div id="device-controls">
+    <button id="scanBtn" class="primary">
+      <span class="dot"></span>
+      <span id="scanBtnLabel">Scan network</span>
+    </button>
+    <div id="progress" class="progress hidden">
+      <div class="bar"><div id="bar-fill"></div></div>
+      <div class="progress-text"><span id="prog-scanned">0</span>/<span id="prog-total">0</span> probed · <span id="prog-found">0</span> found</div>
+    </div>
+  </div>
+
+  <footer class="foot">Local-only · No data leaves your machine</footer>
+</aside>
+
+<main>
+  <!-- ===== Devices view ===== -->
+  <section id="view-devices" class="view">
+    <header class="main-head">
+      <div>
+        <h1>Devices on your network</h1>
+        <p class="muted" id="summary">Click <b>Scan network</b> to begin.</p>
+      </div>
+      <div class="filter">
+        <input id="search" type="search" placeholder="Filter by IP, name, vendor…" />
+      </div>
+    </header>
+
+    <div class="table-wrap">
+      <table class="dev-table">
+        <thead>
+          <tr>
+            <th class="c-dev">Device</th>
+            <th class="c-ip">IP address</th>
+            <th class="c-mac">MAC address</th>
+            <th class="c-type">Type</th>
+            <th class="c-act">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="devices"></tbody>
+      </table>
+    </div>
+    <div id="empty" class="empty">No devices yet.</div>
+  </section>
+
+  <!-- ===== Network test view ===== -->
+  <section id="view-health" class="view hidden">
+    <header class="main-head">
+      <div>
+        <h1>Network test &amp; security</h1>
+        <p class="muted">Speed, latency, DNS, router exposure and a safety score. Heuristic checks — not a CVE scanner or antivirus.</p>
+      </div>
+      <button id="healthBtn" class="primary"><span class="dot"></span><span id="healthBtnLabel">Run tests</span></button>
+    </header>
+
+    <div id="scoreCard" class="score-card hidden">
+      <div class="score-ring" id="scoreRing"><span id="scoreNum">—</span></div>
+      <div>
+        <div class="score-grade" id="scoreGrade">—</div>
+        <ul class="score-notes" id="scoreNotes"></ul>
+      </div>
+    </div>
+
+    <div id="healthGrid" class="health-grid"></div>
+  </section>
+
+  <!-- ===== Traffic monitor view ===== -->
+  <section id="view-traffic" class="view hidden">
+    <header class="main-head">
+      <div>
+        <h1>Traffic monitor</h1>
+        <p class="muted">Live connections from <b>this</b> machine, by process &amp; service. A switched LAN hides other devices' traffic (same limit as Wireshark); HTTPS payloads are encrypted, so flows are labelled by protocol, not "ajax".</p>
+      </div>
+      <button id="sniffBtn" class="primary"><span class="dot"></span><span id="sniffBtnLabel">Start monitor</span></button>
+    </header>
+
+    <div class="sniff-bar">
+      <input id="sniffFilter" type="search" placeholder="Filter by process, host, IP…" />
+      <select id="sniffType">
+        <option value="">All protocols</option>
+      </select>
+      <span class="muted" id="sniffStat">idle</span>
+    </div>
+
+    <div class="table-wrap">
+      <table class="dev-table sniff-table">
+        <thead>
+          <tr>
+            <th>Proto</th><th>Service</th><th>Process</th>
+            <th>Local</th><th>Remote</th><th>Host</th><th>State</th>
+          </tr>
+        </thead>
+        <tbody id="sniffRows"></tbody>
+      </table>
+    </div>
+    <div id="sniffEmpty" class="empty">Press <b>Start monitor</b> to watch live traffic.</div>
+  </section>
+
+  <!-- ===== Wake-on-LAN view ===== -->
+  <section id="view-wol" class="view hidden">
+    <header class="main-head">
+      <div>
+        <h1>Wake-on-LAN</h1>
+        <p class="muted">A sleeping device disappears from scans, so Lanny remembers its IP/MAC to wake it later. Only devices with a wired NIC that has WoL enabled in firmware can be woken — that's a best-effort guess, so try it to confirm.</p>
+      </div>
+    </header>
+
+    <div class="wol-add">
+      <div class="wol-add-title">Add a device manually</div>
+      <div class="wol-add-row">
+        <input id="wolName" type="text" placeholder="Name (e.g. Desktop PC)" />
+        <input id="wolIp" type="text" placeholder="IP (optional)" />
+        <input id="wolMac" type="text" placeholder="MAC address *" />
+        <button id="wolAddBtn" class="primary small">＋ Save</button>
+      </div>
+      <div class="muted" id="wolAddMsg"></div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="dev-table">
+        <thead>
+          <tr><th>Name</th><th>IP</th><th>MAC</th><th>Type</th><th class="c-act">Actions</th></tr>
+        </thead>
+        <tbody id="savedRows"></tbody>
+      </table>
+    </div>
+    <div id="savedEmpty" class="empty">No saved devices yet. Use the ⏰ button on a device, or add one above.</div>
+  </section>
+
+  <!-- ===== SSH view ===== -->
+  <section id="view-ssh" class="view hidden">
+    <header class="main-head">
+      <div>
+        <h1>SSH connections</h1>
+        <p class="muted">Ranked by how often they appear in your shell history (<span id="sshFiles">—</span>). Pick a key, then open your terminal app pre-loaded with the connection.</p>
+      </div>
+    </header>
+
+    <div class="wol-add">
+      <div class="wol-add-title">Identity key (applied to launches)</div>
+      <div class="wol-add-row">
+        <input id="sshKey" type="text" placeholder="~/.ssh/id_ed25519 (optional)" />
+      </div>
+      <div class="wol-add-title" style="margin-top:14px;">Connect manually</div>
+      <div class="wol-add-row">
+        <input id="sshHost" type="text" placeholder="host or IP *" />
+        <input id="sshUser" type="text" placeholder="user (optional)" />
+        <input id="sshPort" type="text" placeholder="port (22)" style="max-width:110px;" />
+        <button id="sshOpenBtn" class="primary small">⌨️ Open terminal</button>
+        <button id="sshCopyBtn" class="primary small ghost">⧉ Copy</button>
+      </div>
+      <div class="muted" id="sshMsg"></div>
+    </div>
+
+    <div id="sshNote" class="muted" style="margin-bottom:10px;"></div>
+    <div class="table-wrap">
+      <table class="dev-table">
+        <thead>
+          <tr><th>Target</th><th>Port</th><th>Uses</th><th>Last used</th><th>Source</th><th class="c-act">Actions</th></tr>
+        </thead>
+        <tbody id="sshRows"></tbody>
+      </table>
+    </div>
+    <div id="sshEmpty" class="empty">No SSH connections found in your shell history.</div>
+  </section>
+</main>
+
+<!-- detail drawer -->
+<aside id="drawer" class="drawer hidden">
+  <button class="close" id="closeDrawer">✕</button>
+  <div class="drawer-head">
+    <div class="device-icon big" id="d-icon">?</div>
+    <div>
+      <div class="d-name" id="d-name">—</div>
+      <div class="d-sub" id="d-sub">—</div>
+    </div>
+  </div>
+  <dl class="d-list">
+    <dt>Type</dt><dd id="d-type">—</dd>
+    <dt>IP address</dt><dd id="d-ip">—</dd>
+    <dt>MAC address</dt><dd id="d-mac">—</dd>
+    <dt>Vendor</dt><dd id="d-vendor">—</dd>
+    <dt>Hostname</dt><dd id="d-host">—</dd>
+  </dl>
+  <div class="drawer-actions">
+    <a id="d-open" class="primary small" target="_blank" rel="noopener">🌐 Open in browser</a>
+    <button id="d-ssh" class="primary small ghost">⌨️ SSH</button>
+    <button id="d-wol" class="primary small ghost">⏰ Wake on LAN</button>
+  </div>
+  <button id="portBtn" class="primary small">🔍 Scan open ports</button>
+  <div id="portResults" class="ports"></div>
+</aside>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
